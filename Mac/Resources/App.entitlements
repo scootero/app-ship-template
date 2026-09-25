@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  App.entitlements — what the Mac app is allowed to do.          [mac]
+  The App Store REQUIRES app-sandbox = true.
+  Add capabilities here as you need them (each one is a sandbox exception):
+    com.apple.security.network.client        outgoing network (APIs, Supabase)
+    com.apple.security.files.user-selected.read-write   open/save panels
+  List: https://developer.apple.com/documentation/bundleresources/entitlements
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

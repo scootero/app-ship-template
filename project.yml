@@ -1,0 +1,198 @@
+# =============================================================================
+# project.yml — XcodeGen spec. THIS is your Xcode project.      [core] PHASE 1
+# =============================================================================
+# WHY: Xcode's .xcodeproj is a giant machine-written file that merge-conflicts
+# constantly and that AI agents love to corrupt. XcodeGen builds it from this
+# readable YAML instead. The .xcodeproj is .gitignored and regenerated:
+#
+#     xcodegen generate          # run after pulling, or after editing this file
+#
+# Xcode Cloud regenerates it too (ci_scripts/ci_post_clone.sh), so what's in
+# git is always the truth.
+#
+# RULE: never add files/targets/settings through Xcode's UI — they'll vanish on
+# the next `xcodegen generate`. Edit this file instead. New .swift files inside
+# a listed `sources` folder are picked up automatically.
+#
+# Docs: https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md
+#
+# PLATFORM BLOCKS: lines between `# >>> ios` / `# <<< ios` (and mac) are
+# removed by Scripts/bootstrap.sh if that platform isn't in ship.config.
+# =============================================================================
+
+name: __APP_NAME__
+
+options:
+  bundleIdPrefix: __BUNDLE_ID_PREFIX__
+  deploymentTarget:
+    iOS: "__IOS_MIN__"
+    macOS: "__MACOS_MIN__"
+  developmentLanguage: en
+  # Groups in Xcode's sidebar mirror the folders on disk.
+  createIntermediateGroups: true
+
+# -----------------------------------------------------------------------------
+# Settings shared by EVERY target
+# -----------------------------------------------------------------------------
+settings:
+  base:
+    # SINGLE SOURCE OF TRUTH FOR THE VERSION.
+    # MARKETING_VERSION = what users see (1.2.0). Bump with Scripts/bump-version.sh.
+    # .github/workflows/apple-store.yml refuses to ship if the git tag
+    # (v1.2.0) doesn't match this number.
+    MARKETING_VERSION: "0.1.0"
+    # Build number. Xcode Cloud overrides this with its own counter
+    # ($CI_BUILD_NUMBER), so you never have to bump it by hand.
+    CURRENT_PROJECT_VERSION: "1"
+
+    DEVELOPMENT_TEAM: __TEAM_ID__
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    # Let Xcode write Info.plist from the INFOPLIST_KEY_* settings below
+    # instead of keeping a separate Info.plist file per target.
+    GENERATE_INFOPLIST_FILE: YES
+    # Needed so `xcodebuild -exportLocalizations` sees SwiftUI strings.
+    SWIFT_EMIT_LOC_STRINGS: YES
+    # OPTIONAL: turn on once the code is clean. Blip runs with both = YES.
+    # SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    # SWIFT_STRICT_CONCURRENCY: complete
+
+# -----------------------------------------------------------------------------
+# Swift packages (SPM). Add dependencies here, not through Xcode's UI.
+# -----------------------------------------------------------------------------
+# TODO(setup): uncomment/add what the app uses. FitUp examples:
+# packages:
+#   RevenueCat:
+#     url: https://github.com/RevenueCat/purchases-ios
+#     from: "5.0.0"
+#   Supabase:
+#     url: https://github.com/supabase/supabase-swift
+#     from: "2.0.0"
+# Then list them under a target's `dependencies:` as  - package: RevenueCat
+
+targets:
+
+# >>> ios
+  # ---------------------------------------------------------------------------
+  # iPhone / iPad app                                              [ios]
+  # ---------------------------------------------------------------------------
+  __APP_NAME__:
+    type: application
+    platform: iOS
+    sources:
+      - path: iOS/Sources
+      - path: Shared/Sources      # code shared with the Mac app
+      - path: iOS/Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: __BUNDLE_ID_PREFIX__.__APP_NAME__
+        PRODUCT_NAME: __APP_NAME__
+        INFOPLIST_KEY_CFBundleDisplayName: "__DISPLAY_NAME__"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # App Store export compliance: YES only if you use non-exempt crypto.
+        # Standard HTTPS is exempt, so NO skips the question on every upload.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        TARGETED_DEVICE_FAMILY: "1,2"   # 1 = iPhone, 2 = iPad. Use "1" for iPhone-only.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # TODO(setup): permissions text. Every capability that asks the user
+        # needs a usage string or Apple rejects the build. FitUp needs HealthKit:
+        # INFOPLIST_KEY_NSHealthShareUsageDescription: "Reads your step count to score battles."
+        # CODE_SIGN_ENTITLEMENTS: iOS/Resources/App.entitlements
+    # dependencies:
+    #   - package: RevenueCat
+    #   - target: __APP_NAME__Widgets     # OPTIONAL widget extension, see below
+
+  __APP_NAME__Tests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: __APP_NAME__
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: __BUNDLE_ID_PREFIX__.__APP_NAME__.Tests
+
+  # OPTIONAL: widget extension. Widgets + app sharing data need an App Group,
+  # which needs real provisioning profiles (see SETUP.md "App Groups").
+  # __APP_NAME__Widgets:
+  #   type: app-extension
+  #   platform: iOS
+  #   sources: [Widgets/Sources, Shared/Sources]
+  #   settings:
+  #     base:
+  #       PRODUCT_BUNDLE_IDENTIFIER: __BUNDLE_ID_PREFIX__.__APP_NAME__.Widgets
+  #       INFOPLIST_KEY_NSExtension: { NSExtensionPointIdentifier: com.apple.widgetkit-extension }
+# <<< ios
+
+# >>> mac
+  # ---------------------------------------------------------------------------
+  # Mac app                                                        [mac]
+  # ---------------------------------------------------------------------------
+  # Same bundle ID as iOS on purpose: one App Store record, "universal purchase"
+  # (buy once, get both). Use a different ID if they're separate products.
+  __APP_NAME__Mac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Mac/Sources
+      - path: Shared/Sources
+      - path: Mac/Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: __BUNDLE_ID_PREFIX__.__APP_NAME__
+        PRODUCT_NAME: __APP_NAME__
+        INFOPLIST_KEY_CFBundleDisplayName: "__DISPLAY_NAME__"
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity  # TODO(setup): pick your category
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # App Store Mac apps MUST be sandboxed (the entitlements file turns the
+        # sandbox on); notarized DMGs need hardened runtime.
+        CODE_SIGN_ENTITLEMENTS: Mac/Resources/App.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        # OPTIONAL menu-bar-only app (no Dock icon), like Blip:
+        # INFOPLIST_KEY_LSUIElement: YES
+
+  __APP_NAME__MacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: __APP_NAME__Mac
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: __BUNDLE_ID_PREFIX__.__APP_NAME__.MacTests
+# <<< mac
+
+# -----------------------------------------------------------------------------
+# Schemes = what you pick in Xcode's top bar and what CI/Xcode Cloud builds.
+# Scheme names are referenced by ci.yml, capture-screenshots.sh and SETUP.md.
+# -----------------------------------------------------------------------------
+schemes:
+# >>> ios
+  __APP_NAME__:
+    build:
+      targets:
+        __APP_NAME__: all
+        __APP_NAME__Tests: [test]
+    test:
+      gatherCoverageData: true      # feeds Scripts/coverage-check.sh
+      targets: [__APP_NAME__Tests]
+# <<< ios
+# >>> mac
+  __APP_NAME__Mac:
+    build:
+      targets:
+        __APP_NAME__Mac: all
+        __APP_NAME__MacTests: [test]
+    test:
+      gatherCoverageData: true
+      targets: [__APP_NAME__MacTests]
+# <<< mac
