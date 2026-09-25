@@ -1,0 +1,80 @@
+# =============================================================================
+# ci.yml — test + build on every push and pull request.        [core] PHASE 2
+# =============================================================================
+# GitHub runs this on a Mac in the cloud. It answers one question per push:
+# "does it still build and do the tests pass?" A red X on the commit = no.
+#
+# Relationship to Xcode Cloud:
+#   ci.yml (GitHub)   → fast safety check, visible on PRs, no signing needed
+#   Xcode Cloud       → the real signed build that goes to TestFlight
+# You can run only one of them. If GitHub macOS minutes get expensive (they're
+# billed at a higher rate on PRIVATE repos; public repos are free), delete this
+# file and let Xcode Cloud run tests too.
+#
+# Nothing here is app-specific: it reads names from ship.config.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "store/**", "**.md"]   # text-only commits don't need a build
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}        # "Run workflow" button in the Actions tab
+
+defaults:
+  run:
+    shell: bash   # explicit bash = pipefail on, so a failing xcodebuild | xcbeautify still fails
+
+concurrency:                   # a newer push cancels the older run
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest      # TODO(setup): pin e.g. macos-15 if a runner update breaks you
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # OPTIONAL: choose an Xcode version (list: ls /Applications | grep Xcode)
+      # - run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Install XcodeGen + generate project
+        run: |
+          brew install xcodegen xcbeautify
+          xcodegen generate
+
+      - name: Read ship.config
+        id: cfg
+        run: |
+          source ./ship.config
+          echo "app=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
+
+      - name: Test iOS
+        if: contains(steps.cfg.outputs.platforms, 'ios')
+        run: |
+          # Pick whatever iPhone simulator this runner has installed.
+          SIM=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          print(next(x['udid'] for r,v in d.items() if 'iOS' in r for x in v if x['name'].startswith('iPhone')))")
+          xcodebuild test \
+            -scheme "${{ steps.cfg.outputs.app }}" \
+            -destination "id=$SIM" \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify
+
+      - name: Test Mac
+        if: contains(steps.cfg.outputs.platforms, 'mac')
+        run: |
+          xcodebuild test \
+            -scheme "${{ steps.cfg.outputs.app }}Mac" \
+            -destination "platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify
+
+      # OPTIONAL PHASE 5: fail the run if coverage drops.
+      # - run: ./Scripts/coverage-check.sh

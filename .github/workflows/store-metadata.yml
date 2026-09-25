@@ -1,0 +1,46 @@
+# =============================================================================
+# store-metadata.yml — push store text without a release.        [opt] PHASE 3
+# =============================================================================
+# When you edit store/metadata/*.md on main, this syncs description, keywords,
+# promotional text and URLs to the version currently being prepared in
+# App Store Connect. (A release run does this too; this is for in-between
+# edits like fixing a typo or updating promotional text.)
+#
+# Skips quietly if the API secrets aren't set yet.
+# =============================================================================
+name: Store metadata
+
+on:
+  push:
+    branches: [main]
+    paths: ["store/metadata/**"]
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [IOS, MAC_OS]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate
+        id: gate
+        env: { KEY_ID: "${{ secrets.ASC_API_KEY_ID }}" }
+        run: |
+          source ./ship.config
+          want=$([ "${{ matrix.platform }}" = IOS ] && echo ios || echo mac)
+          ok=true
+          [[ ",$PLATFORMS," == *",$want,"* ]] || ok=false
+          [ -n "$KEY_ID" ] || ok=false
+          echo "ready=$ok" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ready == 'true'
+        with: { node-version: "22" }
+      - if: steps.gate.outputs.ready == 'true'
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: node Scripts/asc-submit.mjs --metadata-only --platform ${{ matrix.platform }}

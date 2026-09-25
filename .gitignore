@@ -1,0 +1,45 @@
+# =============================================================================
+# .gitignore
+# =============================================================================
+
+# --- Generated Xcode project (XcodeGen makes it from project.yml) ------------
+*.xcodeproj
+*.xcworkspace
+# EXCEPTION: once you add Swift packages, Xcode Cloud needs Package.resolved
+# committed (it won't resolve versions on its own). After `xcodegen generate`
+# with packages, uncomment these (bootstrap already filled in the name):
+# !__APP_NAME__.xcodeproj/
+# __APP_NAME__.xcodeproj/*
+# !__APP_NAME__.xcodeproj/project.xcworkspace/
+# __APP_NAME__.xcodeproj/project.xcworkspace/*
+# !__APP_NAME__.xcodeproj/project.xcworkspace/xcshareddata/
+# __APP_NAME__.xcodeproj/project.xcworkspace/xcshareddata/*
+# !__APP_NAME__.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+# __APP_NAME__.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+# !__APP_NAME__.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+# --- Build output -------------------------------------------------------------
+.build/
+build/
+DerivedData/
+dist/
+xcuserdata/
+*.xcresult
+*.dmg
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# --- Secrets: NEVER commit these ------------------------------------------------
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+Shared/Sources/Secrets.generated.swift
+
+# --- macOS / editors --------------------------------------------------------------
+.DS_Store
+*.swp

@@ -1,0 +1,67 @@
+# =============================================================================
+# cut-release.yml — the "Ship it" button.                       [core] PHASE 3
+# =============================================================================
+# HOW TO RELEASE:
+#   1. ./Scripts/bump-version.sh minor     (edits project.yml + CHANGELOG)
+#   2. Update "## whats_new" in store/metadata/*.md
+#   3. Commit + push to main. Xcode Cloud builds it → TestFlight. Test it.
+#   4. GitHub → Actions → "Cut release" → Run workflow.
+#
+# This workflow then:
+#   - reads the version from project.yml
+#   - creates + pushes the tag v<version>
+#   - starts apple-store.yml (and release-mac.yml if it exists)
+#
+# WHY start them by hand? Tags pushed by a workflow's built-in token do NOT
+# trigger other workflows (GitHub blocks it to prevent loops). Starting them
+# with `gh workflow run` is the allowed way.
+#
+# Prefer the terminal?  git tag v1.2.0 && git push origin v1.2.0
+# (a tag pushed by YOU does trigger apple-store.yml directly).
+# =============================================================================
+name: Cut release
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "Submit for App Review (untick = upload + attach only, you press Submit)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # push the tag
+  actions: write    # start the other workflows
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest       # no Mac needed: this just tags + dispatches
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from project.yml
+        id: v
+        run: |
+          V=$(grep -Eo 'MARKETING_VERSION: *"?[0-9]+\.[0-9]+\.[0-9]+' project.yml | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+          [ -n "$V" ] || { echo "::error::MARKETING_VERSION not found"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then
+            echo "::error::v$V already exists. Run ./Scripts/bump-version.sh first."; exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Tag
+        run: |
+          git tag "v${{ steps.v.outputs.version }}"
+          git push origin "v${{ steps.v.outputs.version }}"
+
+      - name: Start release workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.v.outputs.version }}
+        run: |
+          gh workflow run apple-store.yml --ref "$TAG" -f submit="${{ inputs.submit }}"
+          # [mac] direct-download DMG, only if that workflow is still in the repo
+          if [ -f .github/workflows/release-mac.yml ]; then
+            gh workflow run release-mac.yml --ref "$TAG"
+          fi
+          echo "### 🚀 Cut $TAG — watch the apple-store run in the Actions tab" >> "$GITHUB_STEP_SUMMARY"

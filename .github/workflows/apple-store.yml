@@ -1,0 +1,89 @@
+# =============================================================================
+# apple-store.yml — tag → App Store review.                     [core] PHASE 3
+# =============================================================================
+# Runs when a v* tag is pushed (by you) or when cut-release.yml starts it.
+# Does NOT build anything: Xcode Cloud already built + uploaded this version
+# when you pushed to main. This job just finds that build and submits it,
+# using Scripts/asc-submit.mjs.
+#
+# Needs 3 repo secrets (Settings → Secrets and variables → Actions):
+#   ASC_API_KEY_ID, ASC_API_ISSUER_ID, ASC_API_KEY_P8
+# Until they exist, the job skips with a notice instead of failing.
+#
+# Runs on Linux (cheap) because it's only API calls — no Xcode needed.
+# =============================================================================
+name: App Store
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: "Submit for review (false = attach build only)"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Dry run: read-only, prints what it would do"
+        type: boolean
+        default: false
+
+concurrency:
+  group: apple-store
+  cancel-in-progress: false      # never cancel a half-finished submission
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120         # waiting for Apple to process the build can be slow
+    strategy:
+      fail-fast: false
+      matrix:
+        # One job per platform. The "Check platform" step skips any this app
+        # doesn't build (per ship.config), so leave both here.
+        platform: [IOS, MAC_OS]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check platform + secrets + version
+        id: gate
+        env:
+          KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          source ./ship.config
+          want=$([ "${{ matrix.platform }}" = IOS ] && echo ios || echo mac)
+          if [[ ",$PLATFORMS," != *",$want,"* ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -z "$KEY_ID" ] || [ -z "$P8" ]; then
+            echo "::notice title=App Store skipped::Add ASC_API_KEY_ID / ASC_API_ISSUER_ID / ASC_API_KEY_P8 secrets (SETUP.md)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # The tag must match project.yml, or we'd submit the wrong build.
+          TAG="${GITHUB_REF_NAME#v}"
+          V=$(grep -Eo 'MARKETING_VERSION: *"?[0-9]+\.[0-9]+\.[0-9]+' project.yml | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+          if [ "$TAG" != "$V" ]; then
+            echo "::error::Tag v$TAG doesn't match MARKETING_VERSION $V in project.yml"; exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ready == 'true'
+        with: { node-version: "22" }
+
+      - name: Submit ${{ matrix.platform }}
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          extra=()
+          [ "${{ inputs.dry_run }}" = "true" ] && extra+=(--dry-run)
+          [ "${{ inputs.submit }}" = "false" ] && extra+=(--no-submit)
+          node Scripts/asc-submit.mjs \
+            --version "${{ steps.gate.outputs.version }}" \
+            --platform "${{ matrix.platform }}" \
+            "${extra[@]}"
