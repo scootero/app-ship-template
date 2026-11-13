@@ -38,15 +38,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The raw template (before Scripts/bootstrap.sh) has placeholders like
+      # __APP_NAME__ that can't build. Skip green instead of failing red.
+      - name: Skip if this is the unbootstrapped template
+        id: tpl
+        run: |
+          if grep -q "__APP_""NAME__" project.yml; then   # split so bootstrap.sh doesn't rewrite it
+            echo "::notice title=CI skipped::Template not bootstrapped yet. Fill ship.config and run ./Scripts/bootstrap.sh"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # OPTIONAL: choose an Xcode version (list: ls /Applications | grep Xcode)
       # - run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
       - name: Install XcodeGen + generate project
+        if: steps.tpl.outputs.skip != 'true'
         run: |
           brew install xcodegen xcbeautify
           xcodegen generate
 
       - name: Read ship.config
+        if: steps.tpl.outputs.skip != 'true'
         id: cfg
         run: |
           source ./ship.config
@@ -54,7 +66,7 @@ jobs:
           echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
 
       - name: Test iOS
-        if: contains(steps.cfg.outputs.platforms, 'ios')
+        if: steps.tpl.outputs.skip != 'true' && contains(steps.cfg.outputs.platforms, 'ios')
         run: |
           # Pick whatever iPhone simulator this runner has installed.
           SIM=$(xcrun simctl list devices available -j | python3 -c "
@@ -68,7 +80,7 @@ jobs:
             | xcbeautify
 
       - name: Test Mac
-        if: contains(steps.cfg.outputs.platforms, 'mac')
+        if: steps.tpl.outputs.skip != 'true' && contains(steps.cfg.outputs.platforms, 'mac')
         run: |
           xcodebuild test \
             -scheme "${{ steps.cfg.outputs.app }}Mac" \

@@ -7,7 +7,7 @@ The parts that can't live in the repo. Do each section when you turn on its phas
 ## Phase 1 — Foundation (≈15 min)
 
 - [ ] Apple Developer Program membership active
-- [ ] Find your **Team ID**: developer.apple.com → Account → Membership details → put it in `ship.config`
+- [ ] Find your **Team ID**: developer.apple.com → Account → Membership details → put it in `ship.config` (can stay blank until TestFlight; then set `DEVELOPMENT_TEAM` in `project.yml`)
 - [ ] Fill every `TODO(setup)` in `ship.config`
 - [ ] `brew install xcodegen`
 - [ ] `./Scripts/bootstrap.sh --dry-run`, check it, then `./Scripts/bootstrap.sh`
@@ -69,7 +69,7 @@ The parts that can't live in the repo. Do each section when you turn on its phas
   export ASC_API_KEY_ID=… ASC_API_ISSUER_ID=… ASC_API_KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_….p8
   node Scripts/asc-submit.mjs --version 0.1.0 --platform IOS --dry-run
   ```
-- [ ] First real run: Actions → Cut release → untick **Submit**. Check the result in App Store Connect, then submit by hand. Once that works, leave Submit ticked from then on.
+- [ ] First real run: Actions → **Cut release** → Run workflow with **Submit** left OFF (the default). The pipeline creates the version, fills every listing field it has, attaches the build, and stops. Check it in App Store Connect, finish the manual items above, then press **Add for Review** yourself. Later releases: tick **Submit** if you want it fully automatic.
 
 ## Phase 4 — Marketing (≈20 min)
 
@@ -80,7 +80,7 @@ The parts that can't live in the repo. Do each section when you turn on its phas
 
 ## Phase 5 — Extras
 
-- [ ] **Website:** repo Settings → Pages → Deploy from branch → `main` / `/docs`
+- [ ] **Website:** repo Settings → Pages → Source: **GitHub Actions**. `pages.yml` then rebuilds the site from `store/metadata` + screenshots on every push. Fill `SUPPORT_EMAIL` (and later `APP_STORE_URL` / `DOWNLOAD_URL`) in `ship.config`. Preview locally: `node Scripts/build-site.mjs && open docs/index.html`
 - [ ] **Coverage gate:** raise `MIN_COVERAGE` in `Scripts/coverage-check.sh`, uncomment the step in `ci.yml`
 - [ ] **Mac DMG** (outside the App Store only):
   - Create a Developer ID Application certificate

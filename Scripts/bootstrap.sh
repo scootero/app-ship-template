@@ -7,7 +7,7 @@
 #   2. Replaces every __PLACEHOLDER__ in the repo with your values.
 #   3. Removes the platform you're not building (iOS or Mac folders, targets,
 #      schemes) based on PLATFORMS.
-#   4. Creates a store/metadata/<locale>.md for each locale.
+#   4. Creates a store/metadata/<locale>.md for each locale, builds docs/index.html.
 #   5. Runs `xcodegen generate` if XcodeGen is installed.
 #
 # Usage:   ./Scripts/bootstrap.sh            (from the repo root)
@@ -38,8 +38,12 @@ fail() { echo "✗ ship.config: $1" >&2; exit 1; }
 [[ "$APP_NAME" =~ ^[A-Za-z][A-Za-z0-9]*$ ]] || fail "APP_NAME must be letters/numbers, no spaces (got '$APP_NAME')"
 [[ "$APP_NAME" != "MyApp" ]]               || fail "APP_NAME is still the default 'MyApp'"
 [[ "$BUNDLE_ID_PREFIX" != "com.example" ]]  || fail "BUNDLE_ID_PREFIX is still 'com.example'"
-[[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]          || fail "TEAM_ID must be 10 uppercase letters/numbers"
-[[ "$TEAM_ID" != "ABCDE12345" ]]            || fail "TEAM_ID is still the placeholder"
+if [[ -z "$TEAM_ID" ]]; then
+  echo "! TEAM_ID is blank: fine for the simulator/this Mac. Set DEVELOPMENT_TEAM in"
+  echo "  project.yml before TestFlight or running on a device."
+else
+  [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "TEAM_ID must be 10 uppercase letters/numbers (or blank)"
+fi
 [[ "$PLATFORMS" =~ ^(ios|mac|ios,mac|mac,ios)$ ]] || fail "PLATFORMS must be ios, mac, or ios,mac"
 
 has_platform() { [[ ",$PLATFORMS," == *",$1,"* ]]; }
@@ -49,7 +53,7 @@ echo "→ Bootstrapping $DISPLAY_NAME ($BUNDLE_ID_PREFIX.$APP_NAME) for: $PLATFO
 
 # --- 2. Replace placeholders -------------------------------------------------
 # Files that DOCUMENT the placeholders keep them.
-SKIP_REGEX='^\./(\.git/|Scripts/bootstrap\.sh$|README\.md$|SETUP\.md$)'
+SKIP_REGEX='^\./(\.git/|Scripts/bootstrap\.sh$|README\.md$|SETUP\.md$|ship\.config$)'
 
 # Exported so perl can read them from %ENV (avoids quoting problems).
 export APP_NAME DISPLAY_NAME BUNDLE_ID_PREFIX TEAM_ID GITHUB_USER IOS_MIN MACOS_MIN
@@ -109,6 +113,9 @@ done
 
 [[ $DRY_RUN == 1 ]] && { echo "✓ Dry run complete."; exit 0; }
 date > .bootstrapped
+
+# --- 4b. First build of the website -----------------------------------------
+if command -v node >/dev/null; then node Scripts/build-site.mjs; fi
 
 # --- 5. Generate the Xcode project -------------------------------------------
 if command -v xcodegen >/dev/null; then

@@ -7,6 +7,12 @@ docs/ source-of-truth files), paste the "Ship pipeline rules" section below into
 that AGENTS.md instead of keeping two copies.
 -->
 
+## Start here
+
+- **Creating a new app, or shipping one?** Follow [`PLAYBOOK.md`](PLAYBOOK.md) stage by stage. Do every **[AI]** step; at every **[HUMAN]** step, stop and tell the user exactly what to click.
+- **Worked example:** [`examples/StatsAttack.md`](examples/StatsAttack.md).
+- **Never** pass `--submit` to `Scripts/asc-submit.mjs`, or tick Submit in "Cut release", unless the user explicitly asks in this conversation.
+
 ## Ship pipeline rules
 
 1. **Never edit the `.xcodeproj`.** It's generated. Change `project.yml`, then run `xcodegen generate`. New `.swift` files in an existing `sources` folder need no YAML change.

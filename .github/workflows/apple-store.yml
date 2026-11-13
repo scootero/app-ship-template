@@ -3,8 +3,9 @@
 # =============================================================================
 # Runs when a v* tag is pushed (by you) or when cut-release.yml starts it.
 # Does NOT build anything: Xcode Cloud already built + uploaded this version
-# when you pushed to main. This job just finds that build and submits it,
-# using Scripts/asc-submit.mjs.
+# when you pushed to main. This job finds that build, creates the App Store
+# version, fills in all the listing text, attaches the build, and STOPS.
+# It only presses "Submit for Review" when run with submit = true.
 #
 # Needs 3 repo secrets (Settings → Secrets and variables → Actions):
 #   ASC_API_KEY_ID, ASC_API_ISSUER_ID, ASC_API_KEY_P8
@@ -20,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       submit:
-        description: "Submit for review (false = attach build only)"
+        description: "Also press Submit for Review (off = fill everything, you submit by hand)"
         type: boolean
-        default: true
+        default: false
       dry_run:
         description: "Dry run: read-only, prints what it would do"
         type: boolean
@@ -82,7 +83,8 @@ jobs:
         run: |
           extra=()
           [ "${{ inputs.dry_run }}" = "true" ] && extra+=(--dry-run)
-          [ "${{ inputs.submit }}" = "false" ] && extra+=(--no-submit)
+          # Submits ONLY when explicitly asked. A plain tag push never submits.
+          [ "${{ inputs.submit }}" = "true" ] && extra+=(--submit)
           node Scripts/asc-submit.mjs \
             --version "${{ steps.gate.outputs.version }}" \
             --platform "${{ matrix.platform }}" \

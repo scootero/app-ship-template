@@ -4,6 +4,17 @@ A starter repo for iOS and/or Mac apps that takes you from **code → TestFlight
 
 > **You don't need all of this on day one.** It's built in phases. Phase 1 + 2 alone (project-as-code + push-to-TestFlight) is most of the value. Every other phase is optional and marked.
 
+
+**Start here → [`PLAYBOOK.md`](PLAYBOOK.md)**: the full idea → Xcode → TestFlight → App Store steps, tagged [HUMAN] / [AI] / [AUTO], so you or an AI agent (Codex, Claude Code, Cursor) can follow them. Worked example: [`examples/StatsAttack.md`](examples/StatsAttack.md).
+
+| File | Read it for |
+| --- | --- |
+| `PLAYBOOK.md` | What to do, in order, for a new app and every release |
+| `SETUP.md` | Click-by-click Apple / GitHub screens |
+| `AGENTS.md` | Rules an AI follows while coding inside an app repo |
+| `README.md` (this) | How the pieces fit together, file map |
+| `examples/StatsAttack.md` | The playbook done for a real Mac app |
+
 ---
 
 ## How it works
@@ -12,22 +23,22 @@ A starter repo for iOS and/or Mac apps that takes you from **code → TestFlight
  you edit code ──► git push main ──┬──► GitHub Actions  ci.yml        tests pass? ✓/✗
                                    └──► Xcode Cloud     post-clone    build ──► TestFlight 📱
 
- "Cut release" button ──► tag v1.2.0 ──┬──► apple-store.yml ──► asc-submit.mjs ──► App Review ──► App Store
+ "Cut release" button ──► tag v1.2.0 ──┬──► apple-store.yml ──► asc-submit.mjs ──► listing filled, build attached ──► (you or --submit) ──► App Review
                                        └──► release-mac.yml ──► notarized DMG on GitHub   [mac, optional]
 
  on your Mac, when you want:  Tools/capture-*-screenshots.sh ──► store/screenshots/ ──► upload
                               edit store/metadata/*.md ──► pushed to App Store Connect on release
 
- push to docs/ ──► GitHub Pages website (support + privacy URLs)
+ push to store/ or docs/ ──► pages.yml ──► build-site.mjs ──► GitHub Pages website
 ```
 
 | Loop | Trigger | Runs on | Result |
 | --- | --- | --- | --- |
 | Develop | you edit | your Mac | `xcodegen generate`, build, run |
 | Push | push to `main` | GitHub + Xcode Cloud | tests, TestFlight build |
-| Release | Cut release button | GitHub → Apple API | store version created + submitted |
+| Release | Cut release button | GitHub → Apple API | store version created + filled; submitted only if you tick Submit |
 | Marketing | you run a script | your Mac | screenshots, listing text |
-| Website | push to `docs/` | GitHub Pages | landing, support, privacy pages |
+| Website | push to `store/` or `docs/` | GitHub Actions → Pages | landing (built from store text), support, privacy |
 
 ---
 
@@ -55,9 +66,9 @@ Then follow **[SETUP.md](SETUP.md)** for the one-time Apple / GitHub clicks.
 | --- | --- | --- | --- |
 | **1. Foundation** [core] | Project as YAML, no `.xcodeproj` conflicts; demo + route hooks; tests | `ship.config`, `project.yml`, `Shared/`, `iOS/`, `Mac/`, `Tests/`, `Scripts/bootstrap.sh` | Always |
 | **2. Push → TestFlight** [core] | Every push lands on your phone | `ci_scripts/ci_post_clone.sh`, `.github/workflows/ci.yml` + Xcode Cloud setup | Always |
-| **3. Tag → App Store** | One button submits for review with What's New in every language | `store/metadata/`, `Scripts/asc-submit.mjs`, `Scripts/bump-version.sh`, `cut-release.yml`, `apple-store.yml`, `store-metadata.yml`, `docs/privacy.html` | Once you're releasing regularly |
+| **3. Tag → App Store** | One button fills the whole listing (every language) + attaches the build; optionally submits | `store/metadata/`, `Scripts/asc-submit.mjs`, `Scripts/bump-version.sh`, `cut-release.yml`, `apple-store.yml`, `store-metadata.yml`, `docs/privacy.html` | Once you're releasing regularly |
 | **4. Marketing assets** | Screenshots for every device/language in one command; icon from code | `Tools/capture-*-screenshots.sh`, `Scripts/generate-icon.swift`, `Shared/Sources/DemoData.swift` | When you have screens worth showing / languages > 1 |
-| **5. Extras** | Website, Mac DMG + Homebrew, coverage gate | `docs/`, `Scripts/build-dmg.sh`, `release-mac.yml`, `Casks/`, `Scripts/coverage-check.sh` | When you need them |
+| **5. Extras** | Website built from your store text + screenshots, Mac DMG + Homebrew, coverage gate | `docs/site-template.html`, `Scripts/build-site.mjs`, `pages.yml`, `Scripts/build-dmg.sh`, `release-mac.yml`, `Casks/`, `Scripts/coverage-check.sh` | When you need them |
 
 **Not using a phase?** Delete its files. Nothing in an earlier phase depends on a later one.
 
@@ -76,22 +87,24 @@ ci_scripts/ci_post_clone.sh  [core] Xcode Cloud: install XcodeGen, generate proj
 .github/workflows/
   ci.yml                     [core] test on push/PR
   cut-release.yml            [ph3]  "Ship it" button → tag → starts the two below
-  apple-store.yml            [ph3]  tag → asc-submit.mjs → App Review
+  apple-store.yml            [ph3]  tag → asc-submit.mjs → listing + build ready (submit optional)
   store-metadata.yml         [ph3]  store text edits → App Store Connect
   release-mac.yml            [mac]  tag → notarized DMG → GitHub Release
+  pages.yml                  [ph5]  store text/screenshots → website → GitHub Pages
 Scripts/                     things CI or you run
   bootstrap.sh               run once: fill placeholders, strip unused platform
   bump-version.sh            change version (project.yml + CHANGELOG)
-  asc-submit.mjs             App Store Connect API: build → version → text → submit
+  asc-submit.mjs             App Store Connect API: build → version → text → (submit with --submit)
   generate-icon.swift        icon from code (optional)
   coverage-check.sh          fail if test coverage drops (optional)
   build-dmg.sh               Mac DMG, signed + notarized (optional)
+  build-site.mjs             docs/site-template.html + store text → docs/index.html
 Tools/                       things only you run, on a Mac with simulators
   capture-ios-screenshots.sh
   capture-mac-screenshots.sh
 store/metadata/<locale>.md   App Store listing text per language
 store/screenshots/           captured PNGs
-docs/                        website: index.html, privacy.html (GitHub Pages)
+docs/                        website: site-template.html (design), index.html (generated), privacy.html
 Casks/app.rb                 Homebrew (Mac DMG apps only)
 ```
 
@@ -148,7 +161,7 @@ These pieces of Blip's setup depended on private tools, so they aren't included 
 
 - **Screenshot upload by API.** For now, drag the PNGs into App Store Connect by hand, or use fastlane `deliver`.
 - **Name/subtitle sync.** These live on "App Info" and rarely change, so set them by hand.
-- **Localized website** (`docs/i18n/*.json`) and **portfolio auto-sync**.
+- **Localized website** (the builder uses your first locale only) and **portfolio auto-sync**.
 - **Unsandboxed helper app** for system-level Mac features. Only needed for tools like Blip.
 
 ---

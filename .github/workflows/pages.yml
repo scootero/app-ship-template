@@ -1,0 +1,60 @@
+# =============================================================================
+# pages.yml — build + publish the website.                      [opt] PHASE 5
+# =============================================================================
+# On every push that changes store text, screenshots or the site design:
+#   node Scripts/build-site.mjs  →  docs/index.html  →  GitHub Pages
+#
+# ONE-TIME: repo Settings → Pages → Source: "GitHub Actions".
+# The site appears at https://<GITHUB_USER>.github.io/<APP_NAME>/
+# (Private repos need a paid GitHub plan for Pages; public repos are free.)
+# =============================================================================
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths: ["store/**", "docs/**", "ship.config", "Scripts/build-site.mjs"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if this is the unbootstrapped template
+        id: tpl
+        run: |
+          if grep -q "__APP_""NAME__" project.yml; then   # split so bootstrap.sh doesn't rewrite it
+            echo "::notice title=Website skipped::Template not bootstrapped yet."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.tpl.outputs.skip != 'true'
+        with: { node-version: "22" }
+
+      - name: Build site
+        if: steps.tpl.outputs.skip != 'true'
+        run: node Scripts/build-site.mjs
+
+      - uses: actions/configure-pages@v5
+        if: steps.tpl.outputs.skip != 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.tpl.outputs.skip != 'true'
+        with: { path: docs }
+      - id: deploy
+        if: steps.tpl.outputs.skip != 'true'
+        uses: actions/deploy-pages@v4

@@ -45,7 +45,7 @@ settings:
     # ($CI_BUILD_NUMBER), so you never have to bump it by hand.
     CURRENT_PROJECT_VERSION: "1"
 
-    DEVELOPMENT_TEAM: __TEAM_ID__
+    DEVELOPMENT_TEAM: "__TEAM_ID__"   # blank = pick later; required for TestFlight/devices
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "6.0"
     # Let Xcode write Info.plist from the INFOPLIST_KEY_* settings below

@@ -25,9 +25,9 @@ on:
   workflow_dispatch:
     inputs:
       submit:
-        description: "Submit for App Review (untick = upload + attach only, you press Submit)"
+        description: "Also Submit for App Review (leave off: everything is filled in, you review + submit by hand)"
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write   # push the tag

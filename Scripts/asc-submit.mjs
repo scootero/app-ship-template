@@ -12,17 +12,20 @@
 //      processing (Xcode Cloud uploads it when you push to main).
 //   3. Finds or creates the App Store version (e.g. "1.2.0").
 //   4. Copies store text from store/metadata/<locale>.md into every language:
-//      description, keywords, promotional text, URLs, What's New.
+//      name, subtitle, privacy policy URL (App Information) +
+//      description, keywords, promotional text, URLs, What's New, copyright.
 //   5. Attaches the build to the version.
-//   6. Submits it for App Review (skip with --no-submit).
+//   6. Submits for App Review ONLY if you pass --submit. Default = stop at
+//      "ready", so you can review everything in App Store Connect first.
 //
 // Usage:
-//   node Scripts/asc-submit.mjs --version 1.2.0 --platform IOS [--dry-run] [--no-submit]
+//   node Scripts/asc-submit.mjs --version 1.2.0 --platform IOS [--dry-run] [--submit]
 //   node Scripts/asc-submit.mjs --metadata-only --platform IOS   # just sync store text
 //
 //   --platform       IOS | MAC_OS
 //   --dry-run        read everything, change nothing, print what WOULD happen
-//   --no-submit      do steps 1–5, leave the final "Submit" button to you
+//   --submit         also press "Submit for Review" (step 6). Without it the
+//                    script stops after step 5 and you submit by hand.
 //   --metadata-only  step 4 only, on the version currently being prepared
 //   --wait-minutes   how long to wait for the build (default 90)
 //
@@ -60,7 +63,7 @@ const opt = (name, fallback) => {
 const PLATFORM = opt('platform', 'IOS');
 const VERSION = opt('version');
 const DRY = flag('dry-run');
-const NO_SUBMIT = flag('no-submit');
+const SUBMIT = flag('submit') && !flag('no-submit');   // --no-submit kept for old callers
 const METADATA_ONLY = flag('metadata-only');
 const WAIT_MIN = Number(opt('wait-minutes', 90));
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -72,9 +75,9 @@ if (!METADATA_ONLY && !/^\d+\.\d+\.\d+$/.test(VERSION ?? '')) die('--version X.Y
 const config = Object.fromEntries(
   fs.readFileSync(path.join(ROOT, 'ship.config'), 'utf8')
     .split('\n')
-    .map((l) => l.match(/^([A-Z_]+)="?(.*?)"?\s*$/))
+    .map((l) => l.match(/^([A-Z_]+)=(?:"([^"]*)"|([^\s#]*))/))
     .filter(Boolean)
-    .map((m) => [m[1], m[2]]),
+    .map((m) => [m[1], m[2] ?? m[3] ?? '']),
 );
 const BUNDLE_ID = process.env.BUNDLE_ID || `${config.BUNDLE_ID_PREFIX}.${config.APP_NAME}`;
 
@@ -131,8 +134,7 @@ function readMetadata() {
   return out;
 }
 
-// Only these live on the *version* localization. name + subtitle live on
-// "app info" and rarely change — set those once by hand in App Store Connect.
+// Fields on the *version* localization (change every release if you like).
 const VERSION_FIELDS = {
   description: 'description',
   keywords: 'keywords',
@@ -140,6 +142,14 @@ const VERSION_FIELDS = {
   support_url: 'supportUrl',
   marketing_url: 'marketingUrl',
   whats_new: 'whatsNew',
+};
+
+// Fields on *App Information* (per language, shared by all versions).
+// Apple only lets these change while a version is being prepared.
+const APP_INFO_FIELDS = {
+  name: 'name',
+  subtitle: 'subtitle',
+  privacy_url: 'privacyPolicyUrl',
 };
 
 // ============================================================================
@@ -156,10 +166,13 @@ async function main() {
   if (!METADATA_ONLY) build = await waitForBuild(app.id);
 
   // 3. Version
-  const version = await findOrCreateVersion(app.id);
+  const { version, isFirstVersion } = await findOrCreateVersion(app.id);
 
-  // 4. Store text
-  await syncMetadata(version, { isFirstVersion: VERSION === '1.0.0' || VERSION === '1.0' });
+  // 4. Store text (App Information + this version's text + copyright)
+  const meta = readMetadata();
+  await syncAppInfo(app.id, meta);
+  await syncMetadata(version, meta, { isFirstVersion });
+  await syncCopyright(version, meta);
   if (METADATA_ONLY) return log('✓ metadata synced');
 
   // 5. Attach build
@@ -169,7 +182,11 @@ async function main() {
   log(`✓ build ${build.attributes.version} attached`);
 
   // 6. Submit
-  if (NO_SUBMIT) return log('✓ ready — press "Add for Review" in App Store Connect when you want (--no-submit)');
+  if (!SUBMIT) {
+    log('✓ READY, NOT SUBMITTED. In App Store Connect: check the listing, upload screenshots,');
+    log('  fill App Review Information / App Privacy / age rating / pricing, then press "Add for Review".');
+    return;
+  }
   await submitForReview(app.id, version.id);
   log('✓ submitted for App Review 🚀');
 }
@@ -212,42 +229,95 @@ async function findOrCreateVersion(appId) {
       process.exit(0);
     }
     log(`✓ version ${v.attributes.versionString} (${state(v)})`);
-    return v;
+    return { version: v, isFirstVersion: isFirst(list, v) };
   }
 
   const exact = list.data.find((v) => v.attributes.versionString === VERSION);
   if (exact) {
     if (!editable(exact)) die(`Version ${VERSION} is already ${state(exact)}. Bump the version.`);
     log(`✓ version ${VERSION} exists (${state(exact)})`);
-    return exact;
+    return { version: exact, isFirstVersion: isFirst(list, exact) };
   }
   // Apple allows only one version "in preparation" per platform: rename it.
   const draft = list.data.find(editable);
   if (draft) {
     log(`→ renaming draft version ${draft.attributes.versionString} → ${VERSION}`);
-    return (await api('PATCH', `/v1/appStoreVersions/${draft.id}`, {
+    const v = (await api('PATCH', `/v1/appStoreVersions/${draft.id}`, {
       data: { type: 'appStoreVersions', id: draft.id, attributes: { versionString: VERSION } },
     })).data;
+    return { version: v, isFirstVersion: isFirst(list, draft) };
   }
   log(`→ creating version ${VERSION}`);
-  return (await api('POST', '/v1/appStoreVersions', {
+  const created = (await api('POST', '/v1/appStoreVersions', {
     data: {
       type: 'appStoreVersions',
       attributes: { platform: PLATFORM, versionString: VERSION },
       relationships: { app: { data: { type: 'apps', id: appId } } },
     },
   })).data;
+  return { version: created, isFirstVersion: list.data.length === 0 };
 }
 
-async function syncMetadata(version, { isFirstVersion }) {
-  const meta = readMetadata();
+// First version ever = no OTHER version exists on this platform.
+function isFirst(list, v) {
+  return !list.data.some((x) => x.id !== v.id);
+}
+
+async function syncAppInfo(appId, meta) {
+  const infos = (await api('GET', `/v1/apps/${appId}/appInfos`)).data ?? [];
+  const live = ['READY_FOR_SALE', 'READY_FOR_DISTRIBUTION', 'ACCEPTED', 'REPLACED_WITH_NEW_INFO'];
+  const info = infos.find((i) => !live.includes(i.attributes.state ?? i.attributes.appStoreState)) ?? (infos.length === 1 ? infos[0] : null);
+  if (!info) return log('• App Information is locked (no version in preparation) — skipped name/subtitle/privacy URL');
+  const existing = (await api('GET', `/v1/appInfos/${info.id}/appInfoLocalizations?limit=50`)).data ?? [];
+
+  for (const [locale, fields] of Object.entries(meta)) {
+    const attributes = {};
+    for (const [mdKey, apiKey] of Object.entries(APP_INFO_FIELDS)) {
+      if (fields[mdKey] && !/^TODO/i.test(fields[mdKey])) attributes[apiKey] = fields[mdKey];
+    }
+    if (!Object.keys(attributes).length) continue;
+    const loc = existing.find((l) => l.attributes.locale === locale);
+    try {
+      if (loc) {
+        await api('PATCH', `/v1/appInfoLocalizations/${loc.id}`, {
+          data: { type: 'appInfoLocalizations', id: loc.id, attributes },
+        });
+      } else {
+        await api('POST', '/v1/appInfoLocalizations', {
+          data: {
+            type: 'appInfoLocalizations',
+            attributes: { locale, ...attributes },
+            relationships: { appInfo: { data: { type: 'appInfos', id: info.id } } },
+          },
+        });
+      }
+      log(`✓ ${locale} app info: ${Object.keys(attributes).join(', ')}`);
+    } catch (e) {
+      // e.g. the name is taken by another app. Don't block the rest of the release.
+      log(`! ${locale} app info not updated (fix by hand in App Store Connect):\n  ${e.message}`);
+    }
+  }
+}
+
+async function syncCopyright(version, meta) {
+  const first = Object.values(meta)[0] ?? {};
+  const copyright = first.copyright;
+  if (!copyright || /^TODO/i.test(copyright)) return;
+  await api('PATCH', `/v1/appStoreVersions/${version.id}`, {
+    data: { type: 'appStoreVersions', id: version.id, attributes: { copyright } },
+  });
+  log(`✓ copyright: ${copyright}`);
+}
+
+async function syncMetadata(version, meta, { isFirstVersion }) {
   const existing = version.id === 'DRY_RUN' ? { data: [] }
     : await api('GET', `/v1/appStoreVersions/${version.id}/appStoreVersionLocalizations?limit=50`);
 
   for (const [locale, fields] of Object.entries(meta)) {
     const attributes = {};
     for (const [mdKey, apiKey] of Object.entries(VERSION_FIELDS)) {
-      if (fields[mdKey]) attributes[apiKey] = fields[mdKey];
+      // Unfilled "TODO..." text is never pushed to Apple.
+      if (fields[mdKey] && !/^TODO/i.test(fields[mdKey])) attributes[apiKey] = fields[mdKey];
     }
     // Apple rejects "What's New" on an app's very first version.
     if (isFirstVersion) delete attributes.whatsNew;
